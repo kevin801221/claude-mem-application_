@@ -112,10 +112,84 @@ Claude 模型不能直接讀音檔，所以先用本機的 WhisperX 轉成逐字
 
 客戶會議請在本機轉檔，錄音前先取得與會者同意。
 
-## 選用：送到 Notion 或 Jira
+## 選用：記錄到 Notion 或 Jira
 
-- **原始紀錄**：開啟 claude-mem 的 Notion 匯出（設定範例裡的 `CLAUDE_MEM_NOTION_*`），每筆紀錄會自動寫進 Notion。
-- **日報摘要**：在 Claude Code 接好 Notion 或 Jira 連接器，把 `report.env` 的 `REPORT_DESTINATION` 設成 `notion` 或 `jira`，並把連接器的工具名稱加進 `ALLOWED_TOOLS`。
+送到 Notion 有兩條線，用途不同，可以兩條都接：
+
+| | A. 原始紀錄 | B. 報告摘要 |
+| --- | --- | --- |
+| 送的是 | claude-mem 每一筆紀錄 | 寫好的日報、週報、月報 |
+| 誰送的 | claude-mem 背景服務，不經 Claude | 排程裡的 Claude，透過 Notion MCP |
+| 給誰看 | 當證據，摘要裡的來源可以追溯到這裡 | 給人讀，主管看這個 |
+| 支援 | 只有 Notion | Notion 或 Jira |
+
+### A. 原始紀錄：claude-mem 內建的 Notion 匯出
+
+1. 到 [notion.so/profile/integrations](https://www.notion.so/profile/integrations) 按 **New integration**，選工作區，權限勾 *Read content*、*Update content*、*Insert content*，複製 **Internal Integration Secret**（`ntn_` 開頭）。
+2. 在 Notion 建一個資料庫，例如「原始紀錄庫」。欄位不用自己建，claude-mem 第一次執行時會自動補上。
+3. 打開資料庫，右上角 **•••** → **Connections** → 加入剛剛的 integration。**這步沒做會回 404，匯出會自動關閉。**
+4. 複製資料庫網址。
+5. 在 `~/.claude-mem/settings.json`（Windows：`%USERPROFILE%\.claude-mem\settings.json`）加入：
+   ```json
+   "CLAUDE_MEM_NOTION_ENABLED": "true",
+   "CLAUDE_MEM_NOTION_TOKEN": "ntn_貼上你的secret",
+   "CLAUDE_MEM_NOTION_DATABASE_ID": "貼上資料庫網址"
+   ```
+6. 重啟 claude-mem 的 worker（最簡單是重開 Claude Code），用 Claude Code 做點事，Notion 就會開始出現紀錄。
+
+注意：只會匯出設定之後的新紀錄，舊的歷史不會補；錯誤會寫在 `~/.claude-mem/logs/` 裡標 `NOTION` 的那幾行。
+
+### B. 報告摘要：Claude Code 接 Notion 官方 MCP
+
+1. **建報告庫**：在 Notion 建一個資料庫，例如「團隊報告庫」，建議欄位：
+
+   | 欄位 | 類型 |
+   | --- | --- |
+   | 名稱（標題） | Title |
+   | 成員 | Select 或 Text |
+   | 類型 | Select：日報、週報、月報 |
+   | 日期 | Date |
+   | 需要協助 | Checkbox |
+
+   欄位名稱可以不同，Claude 會依實際欄位填寫，沒有的欄位就略過。
+
+2. **加入 Notion MCP**（加 `--scope user`，排程從 repo 資料夾執行時才讀得到）：
+   ```bash
+   claude mcp add --transport http --scope user notion https://mcp.notion.com/mcp
+   ```
+3. **登入授權**：打開 Claude Code，輸入 `/mcp`，選 notion，在瀏覽器完成授權並選擇工作區。
+4. **修改 `config/report.env`**：
+   ```
+   REPORT_DESTINATION=notion
+   NOTION_REPORT_DB=https://www.notion.so/你的報告庫網址
+   ALLOWED_TOOLS=Read,Write,Edit,Glob,Grep,mcp__<claude-mem搜尋伺服器名稱>,mcp__notion
+   ```
+5. **測試**：手動跑一次日報（Mac：`bash scripts/mac/run-report.sh daily`；Windows：`.\scripts\windows\run-report.ps1 -Type daily`），看 log 最後一行有沒有寫「已送到 Notion」，再到報告庫確認。同一天重跑會更新同一頁，不會重複新增。
+
+### Jira（只支援報告摘要）
+
+claude-mem 沒有內建 Jira 匯出，所以 Jira 只能走 B 這條線，做法是把報告貼成某個 issue 的留言：
+
+1. 加入 Atlassian 官方 MCP，再用 `/mcp` 登入：
+   ```bash
+   claude mcp add --transport http --scope user atlassian https://mcp.atlassian.com/v1/mcp/authv2
+   ```
+2. 修改 `config/report.env`：
+   ```
+   REPORT_DESTINATION=jira
+   JIRA_ISSUE=TEAM-123
+   ALLOWED_TOOLS=Read,Write,Edit,Glob,Grep,mcp__<claude-mem搜尋伺服器名稱>,mcp__atlassian
+   ```
+
+### 排程時的登入問題
+
+`/mcp` 的授權是互動式的。排程執行時會沿用你先前的登入，但登入過期時送出就會失敗，而且沒人看到，所以：
+
+- 每週看一下 `logs/`，或看報告最後一行是否寫「未送出」。
+- 失敗時報告檔案仍然會存在 `reports/`，重新 `/mcp` 登入後再手動跑一次即可。
+- 想要不用互動登入：Notion Business／Enterprise 的工作區擁有者可以在開發者後台建立「MCP token」；Atlassian 的組織管理員可以開啟 API token 驗證。這兩種都比較適合排程，但設定方式依各家文件為準。
+
+公司的 Notion 或 Jira 能不能接外部 integration 和 MCP，請先確認資安規定。
 
 ## 常見問題
 

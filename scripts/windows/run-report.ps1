@@ -65,6 +65,9 @@ try {
         'REPO_DIR'         = $RepoDir
         'AUTHOR'           = $Author
         'TEAM_REPORTS_DIR' = $TeamReportsDir
+        'REPORT_DESTINATION' = "$env:REPORT_DESTINATION"
+        'NOTION_REPORT_DB' = "$env:NOTION_REPORT_DB"
+        'JIRA_ISSUE'       = "$env:JIRA_ISSUE"
     }
 
     function Render-Prompt([string]$name, [hashtable]$extra = @{}) {
