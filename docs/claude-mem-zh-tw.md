@@ -89,6 +89,19 @@ claude-mem 會用另一個 AI 把你的操作壓縮成筆記，這部分有幾�
 - 用 `/clear` 不會結束 session，會重新帶入記憶並繼續記錄。
 - 可以直接用 `sqlite3 ~/.claude-mem/claude-mem.db` 查資料庫。
 
+**例子：摘要什麼時候會顯示**
+
+| 情況 | 最後一筆紀錄 | 摘要產生時間 | 結果 |
+| --- | --- | --- | --- |
+| 摘要比紀錄新 | 下午 2:00 | 下午 2:05 | 顯示完整摘要，因為它涵蓋了全部工作 |
+| 摘要比紀錄舊 | 下午 2:05 | 下午 2:00 | 隱藏摘要，因為 2:05 的新工作還沒被摘要進去，摘要已過時 |
+
+**例子：用 `/clear` 之後**
+
+- 會重新帶入最近的記憶（開工 hook 以 `clear` 來源觸發）。
+- 新的操作照樣記錄在同一個 session 裡。
+- Claude 回覆結束時照樣產生摘要。
+
 ## 三、架構
 
 claude-mem 由五個元件組成，資料全部存在本機的 `~/.claude-mem/`。
@@ -132,6 +145,21 @@ claude-mem 由五個元件組成，資料全部存在本機的 `~/.claude-mem/`�
 | 2. 看前後脈絡 | `timeline` | 某筆紀錄前後發生了什麼 | 100 到 200 |
 | 3. 取完整內容 | `get_observations` | 敘述、事實、檔案、標籤 | 500 到 1,000 |
 
+**例子：為什麼三步驟比較省**
+
+| 做法 | 花費 | 有用的比例 |
+| --- | --- | --- |
+| 傳統做法：一開始就把全部撈出來 | 約 20,000 token | 約 10%，有 18,000 token 是浪費 |
+| 三步驟：索引 10 筆約 1,000、看 2 筆的脈絡約 500、取 3 筆完整內容約 1,500 | 約 3,000 token | 幾乎全部有用 |
+
+**例子：常見用法**
+
+- **查 bug**：先 `search(query="error database connection", type="bugfix", limit=10)`，看到 #245、#312、#489；再 `timeline(anchor=312)` 看修正前後；最後 `get_observations(ids=[312, 489])` 取細節。
+- **回顧決策**：`search(query="authentication", type="decision", limit=5)`，再看脈絡、取完整理由。
+- **追某個檔案的修改史**：`search(query="worker-service.ts", limit=20)`。
+- **追功能演進**：`search(query="dark mode", type="feature", orderBy="date_asc")`，依時間由舊到新看。
+- **離開一陣子後恢復記憶**：`search(query="專案名稱", limit=10, orderBy="date_desc")`，再往前看 10 筆脈絡。
+
 ### search 常用參數
 
 - `query`：用白話描述要找的東西；有向量索引時會先依意思比對，再用關鍵字補。
@@ -156,6 +184,16 @@ search(query="今天的工作", dateStart="2026-11-16", dateEnd="2026-11-16", or
 - 中文、日文這類不用空格分詞的文字，會用「字串包含」的方式比對。
 - 搜尋你自己的 prompt 時，整句要完全出現才會命中，所以盡量用短詞。
 
+**例子：查詢字怎麼比對**
+
+| 查詢 | 實際效果 |
+| --- | --- |
+| `query="database migration"` | 兩個字都出現在紀錄裡就算，位置不拘，不是片語搜尋 |
+| `query="worker-service.ts"` | 找這個檔名；只分開提到 worker、service、ts 的紀錄不算 |
+| `query="security NOT deprecated"` | NOT 不是運算子，會要求 security、not、deprecated 三個字都出現 |
+| `query="migrat"` | 沒有完整字吻合時，可以比對到 migration |
+| 搜你自己的 prompt：`query="database migration"` | 找不到寫成「migration of the database」的 prompt，因為整句要照原樣出現 |
+
 ### 另外幾點
 
 - **Dumb search**：`dumb_search` 只比對標題，快但容易漏，一般用預設的三步驟就好。
@@ -173,6 +211,23 @@ search(query="今天的工作", dateStart="2026-11-16", dateEnd="2026-11-16", or
 - **不會蓋掉你寫的東西**：標籤外面你自己寫的內容會保留。
 - **專案根目錄不會產生**：避免蓋掉你手寫的專案層級 CLAUDE.md。
 - **要不要進 git**：團隊常有新人加入時可以 commit；想保持 repo 乾淨就加進 `.gitignore`。PR 前可用 `bun scripts/regenerate-claude-md.ts --clean` 清掉自動產生的段落。
+
+**例子：自動產生的內容長這樣**
+
+````markdown
+<claude-mem-context>
+# Recent Activity
+
+### Jan 4, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #1234 | 4:30 PM | 🔵 | Implemented user authentication | ~250 |
+| #1235 | " | 🔴 | Fixed login redirect bug | ~180 |
+</claude-mem-context>
+````
+
+你可以在標籤上方寫「這個資料夾放驗證相關程式」，下方寫手動筆記，重新產生時這些都會保留。
 
 ### 知識代理（Knowledge Agents）
 
@@ -205,6 +260,32 @@ search(query="今天的工作", dateStart="2026-11-16", dateEnd="2026-11-16", or
 - 不要包太多，否則以後的記憶品質會變差。真正的密鑰還是應該用正式的密鑰管理工具。
 - 驗證：用 `sqlite3` 查 `user_prompts` 和 `observations` 表，確認私密內容沒有被存進去。
 
+**例子：私密內容不會被存**
+
+```
+請分析這個錯誤：
+
+<private>
+Error: Database connection failed
+Host: internal-db-prod.company.com
+User: admin_user
+</private>
+
+可能是什麼原因？
+```
+
+Claude 看得到完整錯誤，但只有「請分析這個錯誤」和「可能是什麼原因」會被存下來。
+
+```
+<private>
+API_KEY=sk-proj-abc123xyz789
+</private>
+
+幫我測試這個 API 連線
+```
+
+Claude 這次可以用這把金鑰，但金鑰不會進到記憶裡。
+
 ### 自動遮蔽（Auto-Redaction）
 
 - 預設關閉。在 settings.json 加上 `"CLAUDE_MEM_REDACT_ENABLED": "true"` 開啟。
@@ -213,6 +294,15 @@ search(query="今天的工作", dateStart="2026-11-16", dateEnd="2026-11-16", or
 - 可用 `CLAUDE_MEM_REDACT_CUSTOM_PATTERNS` 加入公司自己的 token 格式；可用 `CLAUDE_MEM_REDACT_DISABLED_BUILTINS` 關掉個別規則。
 - 符合的內容會被換成 `<redacted type='…'/>`，而且無法還原。
 - 內建規則沒有涵蓋 Azure、GCP 服務帳號 JSON 和私有機房的 token，這些要自己加自訂規則。
+
+**例子：遮蔽前後**
+
+```
+遮蔽前：curl -H "Authorization: Bearer sk-abc123def456..." …
+遮蔽後：curl -H "Authorization: Bearer <redacted type='openai_key'/>" …
+```
+
+前後文保留，只有密鑰本身被換掉，所以搜尋和筆記品質不受影響。通用規則不會誤抓 `max_tokens=4096` 這種純數字或太短的值。
 
 ### 對團隊的建議
 
