@@ -1,0 +1,4 @@
+# Keep shell scripts LF so they run on Mac even if edited on Windows
+*.sh text eol=lf
+# PowerShell scripts work either way; CRLF is friendlier for Windows editors
+*.ps1 text eol=crlf

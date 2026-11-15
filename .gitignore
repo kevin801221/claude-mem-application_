@@ -1,0 +1,22 @@
+# 個人設定與機密
+config/report.env
+config/speakers.json
+.env
+
+# 產出物：報告、錄音、逐字稿、會議紀錄、執行紀錄
+reports/**/*.md
+recordings/*
+!recordings/.gitkeep
+meetings/*
+!meetings/.gitkeep
+logs/
+team-reports/
+
+# Python
+.venv-whisper/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
