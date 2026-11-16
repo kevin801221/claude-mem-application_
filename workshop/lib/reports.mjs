@@ -18,7 +18,7 @@ export function safeFile(root, relative) {
 export function config(file) {
   const c=JSON.parse(fs.readFileSync(file,'utf8')); id(c.team);
   if (!Array.isArray(c.members)||!c.members.length||new Set(c.members).size!==c.members.length) throw Error('Unique members required');
-  c.members.forEach(id); new Intl.DateTimeFormat('en',{timeZone:c.timezone}).format();
+  c.members.forEach(id); if(typeof c.timezone!=='string'||!c.timezone)throw Error('IANA timezone required'); new Intl.DateTimeFormat('en',{timeZone:c.timezone}).format();
   c.holidays??=[];c.leave??={};c.holidays.forEach(date);
   for(const [member,days] of Object.entries(c.leave)){if(!c.members.includes(member)||!Array.isArray(days))throw Error('Invalid leave calendar');days.forEach(date);}
   return c;
