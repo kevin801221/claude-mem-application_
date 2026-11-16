@@ -20,3 +20,8 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Opt-in workshop outputs / dependencies
+workshop/node_modules/
+workshop/output/
+workshop/local-data/
