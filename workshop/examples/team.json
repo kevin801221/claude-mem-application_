@@ -1,0 +1,7 @@
+{
+ "team":"alpha",
+ "timezone":"Asia/Taipei",
+ "members":["amy","ben"],
+ "holidays":["2026-11-13"],
+ "leave":{"ben":["2026-11-16"]}
+}

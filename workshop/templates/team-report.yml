@@ -1,0 +1,85 @@
+# Opt in: place in .github/workflows/ only in the team's approved private repo.
+name: Team report workshop
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 11 * * *' # 19:17 Asia/Taipei
+permissions:
+  contents: write
+concurrency:
+  group: team-report-monthly-publisher
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: ${{ github.event.repository.private == true && vars.TEAM_REPORTS_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: npm ci --prefix workshop --ignore-scripts
+      - name: Regenerate verified monthly output
+        env:
+          TZ: Asia/Taipei
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date +%F)
+          month=${cutoff:0:7}
+          stage=$(mktemp -d)
+          trap 'rm -rf "$stage"' EXIT
+
+          # Keep the prior month as a separate archive. The first run of a new
+          # month can also include reports merged after the last cutoff.
+          generate() {
+            local target_month=$1
+            local target_cutoff=$2
+            local stem="$target_month-team"
+            local build="$stage/build/$target_month"
+            local output="$stage/output/$target_month"
+            mkdir -p "$build" "$output"
+            node workshop/cli.mjs monthly --data . --config team-workshop.json \
+              --month "$target_month" --as-of "$target_cutoff" --out "$build"
+            local ver
+            ver=$(node -e '
+              const fs = require("node:fs");
+              const [base, stem] = process.argv.slice(1);
+              const { directory } = JSON.parse(fs.readFileSync(base + "/" + stem + ".current.json", "utf8"));
+              if (typeof directory !== "string" || !directory.startsWith(stem + "-") ||
+                  !/^[0-9a-f-]{36}$/.test(directory.slice(stem.length + 1))) process.exit(1);
+              process.stdout.write(directory);
+            ' "$build" "$stem")
+            unzip -tq "$build/$ver/$stem.pptx"
+            test -s "$build/$ver/$stem.manifest.json"
+            test -s "$build/$ver/$stem.summary.md"
+            cp -- "$build/$ver/$stem.pptx" "$output/$stem.pptx"
+            cp -- "$build/$ver/$stem.manifest.json" "$output/manifest.json"
+            cp -- "$build/$ver/$stem.summary.md" "$output/summary.md"
+          }
+
+          if [[ ${cutoff:8:2} == '01' ]]; then
+            prior=$(date -d "$cutoff -1 day" +%F)
+            generate "${prior:0:7}" "$prior"
+          fi
+          generate "$month" "$cutoff"
+
+          # Stage only the three expected files for each period, never reports
+          # or configuration. No force push: a concurrent source update fails
+          # safely and the team can rerun with the latest default branch.
+          for source in "$stage/output"/*; do
+            period=${source##*/}
+            dest="team-ppt/$period"
+            mkdir -p "$dest"
+            cp -- "$source/$period-team.pptx" "$source/manifest.json" "$source/summary.md" "$dest/"
+            git add -- "$dest/$period-team.pptx" "$dest/manifest.json" "$dest/summary.md"
+          done
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "Update team presentation for $cutoff"
+          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
