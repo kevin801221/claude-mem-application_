@@ -6,7 +6,15 @@ Mac 與 Windows 都有排程腳本。
 
 > claude-mem 是社群開源專案，不是 Anthropic 官方工具。本 repo 為教學範例，導入團隊前請先小規模試行。
 
-## 流程
+## 教學：從 Claude Code 到 claude-mem
+
+先讓學員撞牆，再給解藥：用同一個問題，比較原生記憶和 claude-mem，再看用 JSONL 自己做會碰到哪些坑。完整教案見 [docs/claude-code-to-claude-mem.md](docs/claude-code-to-claude-mem.md)。
+
+![用 JSONL 自己做記憶的流程與問題](docs/images/03-jsonl-diy-pitfalls.png)
+
+![claude-mem 的管線與對應解決的問題](docs/images/04-claude-mem-pipeline.png)
+
+## 自動日報流程
 
 ```
 上班：Claude Code / Codex 工作 ── claude-mem 自動記錄
@@ -25,8 +33,11 @@ Mac 與 Windows 都有排程腳本。
 
 | 路徑 | 內容 |
 | --- | --- |
+| `docs/claude-code-to-claude-mem.md` | **教學模組：從 Claude Code 原生記憶到 claude-mem**（8 張流程圖：原生三層、撞牆實驗、JSONL 自己做的坑、claude-mem 管線、記憶方案地圖、決策樹、分工、舊專案銜接） |
+| `docs/doc-retrieval-and-memory.md` | 文件檢索與長期記憶：三條檢索路線、去重流程、搭配 claude-mem（3 張流程圖） |
 | `docs/claude-mem-zh-tw.md` | claude-mem 官方文件繁中重點整理（含常見問答、兩種做法比較） |
 | `docs/team-report-architecture.md` | 團隊自動化日報／週報系統架構 |
+| `docs/images/` | 所有流程圖的 PNG，投影片可直接用 |
 | `prompts/` | 日報、週報、月報、會議紀錄、主管彙整的 prompt，改這裡就能調整報告格式 |
 | `config/` | claude-mem 設定範例、排程設定範例、說話者對照範例 |
 | `scripts/mac/` | Mac 執行腳本與 launchd 排程安裝 |
